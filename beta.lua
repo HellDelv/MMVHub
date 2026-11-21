@@ -85,10 +85,22 @@ local BUTTON_ORDER = {
 }
 
 local BUTTON_TEXT = {
-	SeaCrossbow = "Sea Crossbow", OldAnim = "Old Anim",
+	SeaCrossbow = "Sea Crossbow", OldAnim = "Old Animation",
 	RainbowCarpet = "Rainbow Carpet", GravityCoil = "Gravity Coil",
 	SpeedCoil = "Speed Coil", SpeedGlitch = "Speed Glitch",
-	FakeBomb = "Fake Bomb", GunAnimDeleter = "Gun Anim Deleter",
+	FakeBomb = "Fake Bomb", GunAnimDeleter = "Remove gun anim",
+}
+
+-- Точные позиции кнопок из оригинального GUI (ромб из кнопок)
+local BUTTON_POSITIONS = {
+	SeaCrossbow = UDim2.fromScale(0.409709, 0.046602),
+	OldAnim = UDim2.fromScale(0.409709, 0.753398),
+	RainbowCarpet = UDim2.fromScale(0.056311, 0.409709),
+	GravityCoil = UDim2.fromScale(0.759223, 0.409709),
+	SpeedCoil = UDim2.fromScale(0.650485, 0.165049),
+	SpeedGlitch = UDim2.fromScale(0.650485, 0.658252),
+	FakeBomb = UDim2.fromScale(0.163107, 0.165049),
+	GunAnimDeleter = UDim2.fromScale(0.163107, 0.658252),
 }
 
 -- ============================== ПОСТРОЕНИЕ GUI ==============================
@@ -113,24 +125,16 @@ windowScale.Name = "WindowScale"
 windowScale.Scale = 0
 windowScale.Parent = window
 
--- Сетка кнопок 4 x 2
+-- Кнопки расположены ромбом, как в оригинальном GUI
 local buttons = {}
 do
-	local size, gap = 93, 20
-	local cols, rows = 4, 2
-	local startX = (515 - (cols * size + (cols - 1) * gap)) / 2
-	local startY = (515 - (rows * size + (rows - 1) * gap)) / 2
+	local size = 93
 	for index, name in BUTTON_ORDER do
-		local col = (index - 1) % cols
-		local row = math.floor((index - 1) / cols)
 		local button = Instance.new("TextButton")
 		button.Name = name
 		button.Size = UDim2.fromOffset(size, size)
-		button.Position = UDim2.fromOffset(
-			startX + col * (size + gap) + size / 2,
-			startY + row * (size + gap) + size / 2
-		)
-		button.AnchorPoint = Vector2.new(0.5, 0.5)
+		button.Position = BUTTON_POSITIONS[name]
+		button.AnchorPoint = Vector2.new(0, 0)
 		button.BackgroundColor3 = Color3.new(1, 1, 1)
 		button.Text = BUTTON_TEXT[name] or name
 		button.TextColor3 = Color3.new(0, 0, 0)
@@ -723,42 +727,165 @@ local function setupSeaCrossbow(tool)
 	end)
 end
 
--- ---- Fake Bomb: двойной прыжок — платформа под ногами на секунду ----
+-- ---- Fake Bomb: бросок бомбы + невидимая платформа под ногами (двойной прыжок) ----
 local function setupFakeBomb(tool)
 	local handle = tool.Handle
-	local canUse = true
+	local mouse = player:GetMouse()
+	local canThrow = true
+
+	-- мигающий индикатор и дым на ручке (клонируются вместе с бомбой)
+	local billboard = Instance.new("BillboardGui")
+	billboard.Size = UDim2.new(3, 0, 3, 0)
+	local lightImage = Instance.new("ImageLabel")
+	lightImage.Name = "LightImage"
+	lightImage.BackgroundTransparency = 1
+	lightImage.BorderSizePixel = 0
+	lightImage.Size = UDim2.new(1, 0, 1, 0)
+	lightImage.Image = "rbxassetid://104564194"
+	lightImage.Visible = false
+	lightImage.Parent = billboard
+	billboard.Parent = handle
+
+	local smoke = Instance.new("Smoke")
+	smoke.Name = "Smoke"
+	smoke.Enabled = false
+	smoke.Size = 0.1
+	smoke.Color = Color3.fromRGB(128, 128, 128)
+	smoke.Parent = handle
+
+	local function makeConfetti(position)
+		local confetti = Instance.new("Part")
+		confetti.Name = "Effect"
+		confetti.Size = Vector3.zero
+		confetti.CanCollide = false
+		confetti.Transparency = 1
+		confetti.CFrame = CFrame.new(position)
+		confetti.AssemblyLinearVelocity = Vector3.new(
+			math.random() - 0.5, math.random(), math.random() - 0.5
+		).Unit * 20
+
+		local billboard = Instance.new("BillboardGui")
+		billboard.Adornee = confetti
+		billboard.Size = UDim2.new(7, 0, 4, 0)
+		local image = Instance.new("ImageLabel")
+		image.BackgroundTransparency = 1
+		image.BorderSizePixel = 0
+		image.Size = UDim2.new(1, 0, 1, 0)
+		image.Image = "rbxassetid://104606998"
+		image.Parent = billboard
+		billboard.Parent = confetti
+
+		local float = Instance.new("BodyForce")
+		float.Force = Vector3.new(0, confetti:GetMass() * 196.2, 0)
+		float.Parent = confetti
+
+		Debris:AddItem(confetti, 7 + math.random())
+		confetti.Parent = workspace
+	end
+
+	local function fuseBomb(bomb)
+		task.spawn(function()
+			local beep = bomb:FindFirstChild("Beep")
+			local fuse = bomb:FindFirstChild("Fuse")
+			local pleaseNo = bomb:FindFirstChild("PleaseNo")
+			local bombSmoke = bomb:FindFirstChild("Smoke")
+			local bombGui = bomb:FindFirstChild("BillboardGui")
+			local lightImg = bombGui and bombGui:FindFirstChild("LightImage")
+
+			-- писк с ускоряющимся интервалом + мигание индикатора
+			local timer = 4
+			local startTime = tick()
+			while true do
+				local percent = (tick() - startTime) / timer
+				if percent > 1 then break end
+				if beep then beep:Play() end
+				if lightImg then lightImg.Visible = true end
+				task.wait(0.1)
+				if lightImg then lightImg.Visible = false end
+				task.wait(math.max(0.05, (1 - percent) * 1))
+			end
+
+			task.wait(0.5)
+				if bombSmoke then bombSmoke.Enabled = true end
+			task.wait(0.5)
+				if fuse then fuse:Play() end
+				if lightImg then lightImg.Visible = false end
+				if pleaseNo then pleaseNo:Play() end
+
+			-- конфетти!
+				for _ = 1, 7 do
+					makeConfetti(bomb.Position)
+				end
+				task.wait(0.5)
+				if bombSmoke then bombSmoke.Enabled = false end
+				task.wait(2.5)
+				bomb.Parent = nil
+			end)
+	end
 
 	tool.Activated:Connect(function()
-		if not canUse then return end
+		if not canThrow then return end
 		local char, humanoid, root = getCharParts(tool)
-		if not humanoid or not root or humanoid.Health <= 0 then return end
+		if not humanoid or not root then return end
 
-		canUse = false
+		canThrow = false
+		handle.Transparency = 1
 
-		-- платформа прямо под ногами
+		-- невидимая платформа под ногами (двойной прыжок)
 		local pad = Instance.new("Part")
 		pad.Name = "JumpPad"
 		pad.Size = Vector3.new(6, 1, 6)
 		pad.CFrame = CFrame.new(root.Position - Vector3.new(0, 3.5, 0))
 		pad.Anchored = true
 		pad.CanCollide = true
-		pad.Transparency = 0.4
-		pad.Color = Color3.fromRGB(130, 90, 200)
-		pad.Material = Enum.Material.Neon
+		pad.Transparency = 1
 		pad.Parent = workspace
-
-		-- звук и эффект
-		local beep = handle:FindFirstChild("Beep")
-		if beep then beep:Play() end
-
-		-- платформа живёт 1 секунду и исчезает
 		task.delay(1, function()
 			pad.Parent = nil
 		end)
 
-		-- перезарядка
-		task.delay(2, function()
-			canUse = true
+		-- бросок бомбы в точку курсора
+		local bomb = handle:Clone()
+		bomb.Name = "FakeBombProjectile"
+		bomb.CanCollide = true
+		bomb.Transparency = 0
+
+		local throwSound = bomb:FindFirstChild("Throw")
+		if throwSound then throwSound:Play() end
+
+		local target = mouse.Hit.Position
+		local direction = (target - root.Position)
+		if direction.Magnitude > 0 then direction = direction.Unit end
+		bomb.CFrame = CFrame.new(root.Position, root.Position + direction) * CFrame.new(0, 0, -5)
+		bomb.AssemblyLinearVelocity = direction * 50 + Vector3.new(0, 20, 0)
+
+		-- приклеивается к другим персонажам при касании
+		local attached = false
+		bomb.Touched:Connect(function(hit)
+			if attached then return end
+			if hit.Name == "Handle" or hit.Name == "Effect" or hit.Name == "JumpPad" then return end
+			local otherChar = hit.Parent
+			local otherHum = otherChar and otherChar:FindFirstChildOfClass("Humanoid")
+			if otherHum and otherHum.Health > 0 and otherChar ~= char then
+				local otherRoot = otherChar:FindFirstChild("HumanoidRootPart")
+				if otherRoot then
+					attached = true
+					local weld = Instance.new("Weld")
+					weld.Part0 = otherRoot
+					weld.Part1 = bomb
+					weld.C0 = CFrame.new(0, 0, 0.8) * CFrame.Angles(math.pi / 2, 3.5, 0)
+					weld.Parent = bomb
+				end
+			end
+		end)
+
+		bomb.Parent = workspace
+		Debris:AddItem(bomb, 14)
+		fuseBomb(bomb)
+
+		task.delay(0.1, function()
+			handle.Transparency = 0
+			canThrow = true
 		end)
 	end)
 end
