@@ -78,10 +78,10 @@ local GEAR_DATA = {
 	},
 }
 
--- Кнопки окна в исходном порядке (номера 1-8)
+-- Кнопки по порядку: 1-8 по часовой стрелке, начиная с верхней
 local BUTTON_ORDER = {
-	"SeaCrossbow", "OldAnim", "RainbowCarpet", "GravityCoil",
-	"SpeedCoil", "SpeedGlitch", "FakeBomb", "GunAnimDeleter",
+	"SeaCrossbow", "SpeedCoil", "GravityCoil", "SpeedGlitch",
+	"OldAnim", "GunAnimDeleter", "RainbowCarpet", "FakeBomb",
 }
 
 local BUTTON_TEXT = {
